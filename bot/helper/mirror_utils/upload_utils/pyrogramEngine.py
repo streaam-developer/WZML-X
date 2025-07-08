@@ -573,7 +573,7 @@ class TgUploader:
             ):
                 key = "documents"
                 if is_video and thumb is None:
-                    thumb = await take_ss(self.__up_path, None)
+                    thumb = await take_ss(self.__up_path, None, user_id=self.__user_id)
                 if self.__is_cancelled:
                     return
                 buttons = await self.__buttons(self.__up_path, is_video)
@@ -608,7 +608,7 @@ class TgUploader:
                 key = "videos"
                 duration = (await get_media_info(self.__up_path))[0]
                 if thumb is None:
-                    thumb = await take_ss(self.__up_path, duration)
+                    thumb = await take_ss(self.__up_path, duration, user_id=self.__user_id)
                 if thumb is not None:
                     with Image.open(thumb) as img:
                         width, height = img.size

@@ -11,6 +11,7 @@ from asyncio import create_subprocess_exec, create_task, gather, Semaphore
 from asyncio.subprocess import PIPE
 from telegraph import upload_file
 from langcodes import Language
+from PIL import Image, ImageDraw, ImageFont
 
 from bot import LOGGER, MAX_SPLIT_SIZE, config_dict, user_data
 from bot.modules.mediainfo import parseinfo
@@ -112,6 +113,128 @@ async def get_media_info(path, metadata=False):
     return duration, artist, title
 
 
+async def get_video_metadata(path):
+    """Extract detailed video metadata for thumbnail overlay"""
+    try:
+        result = await cmd_exec([
+            "ffprobe",
+            "-hide_banner",
+            "-loglevel", "error",
+            "-print_format", "json",
+            "-show_format",
+            "-show_streams",
+            path,
+        ])
+        if result[1]:
+            LOGGER.warning(f"Video Metadata FF: {result[1]}")
+    except Exception as e:
+        LOGGER.error(f"Video Metadata: {e}. File not found!")
+        return {}
+    
+    try:
+        ffresult = eval(result[0])
+        format_info = ffresult.get("format", {})
+        streams = ffresult.get("streams", [])
+        
+        # Extract basic info
+        file_size = int(format_info.get("size", 0))
+        duration = float(format_info.get("duration", 0))
+        bitrate = int(format_info.get("bit_rate", 0)) // 1000  # Convert to kbps
+        
+        # Extract video stream info
+        video_stream = next((s for s in streams if s.get("codec_type") == "video"), {})
+        width = video_stream.get("width", 0)
+        height = video_stream.get("height", 0)
+        fps = video_stream.get("r_frame_rate", "0/1")
+        
+        # Calculate FPS
+        try:
+            if "/" in str(fps):
+                num, den = map(float, str(fps).split("/"))
+                fps = round(num / den if den != 0 else 0)
+            else:
+                fps = round(float(fps))
+        except:
+            fps = 0
+            
+        return {
+            "file_size": file_size,
+            "duration": duration,
+            "bitrate": bitrate,
+            "width": width,
+            "height": height,
+            "fps": fps,
+            "resolution": f"{width}x{height}" if width and height else "Unknown"
+        }
+    except Exception as e:
+        LOGGER.error(f"Error parsing video metadata: {e}")
+        return {}
+
+
+async def add_metadata_overlay(image_path, metadata):
+    """Add metadata overlay to thumbnail image"""
+    try:
+        with Image.open(image_path) as img:
+            # Convert to RGB if necessary
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            
+            draw = ImageDraw.Draw(img)
+            width, height = img.size
+            
+            # Try to use a font, fallback to default if not available
+            try:
+                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
+                small_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
+            except:
+                try:
+                    font = ImageFont.load_default()
+                    small_font = font
+                except:
+                    font = small_font = None
+            
+            # Prepare overlay text
+            file_size = get_readable_file_size(metadata.get("file_size", 0))
+            bitrate = f"{metadata.get('bitrate', 0)}k" if metadata.get('bitrate') else "N/A"
+            fps = f"{metadata.get('fps', 0)}fps" if metadata.get('fps') else "N/A"
+            resolution = metadata.get('resolution', 'Unknown')
+            
+            # Create overlay background (semi-transparent black)
+            overlay_height = 80
+            overlay = Image.new("RGBA", (width, overlay_height), (0, 0, 0, 180))
+            
+            # Draw overlay text
+            overlay_draw = ImageDraw.Draw(overlay)
+            
+            text_lines = [
+                f"Size: {file_size}  •  Quality: {resolution}",
+                f"Bitrate: {bitrate}  •  FPS: {fps}"
+            ]
+            
+            y_offset = 10
+            for line in text_lines:
+                # Calculate text position (centered)
+                if small_font:
+                    bbox = overlay_draw.textbbox((0, 0), line, font=small_font)
+                    text_width = bbox[2] - bbox[0]
+                else:
+                    text_width = len(line) * 8  # Rough estimate
+                
+                x_pos = (width - text_width) // 2
+                overlay_draw.text((x_pos, y_offset), line, fill=(255, 255, 255, 255), font=small_font)
+                y_offset += 25
+            
+            # Paste overlay onto original image (bottom)
+            img.paste(overlay, (0, height - overlay_height), overlay)
+            
+            # Save the modified image
+            img.save(image_path, "JPEG", quality=95)
+            
+    except Exception as e:
+        LOGGER.error(f"Error adding metadata overlay: {e}")
+        # If overlay fails, just continue with the original thumbnail
+
+
 async def get_document_type(path):
     is_video, is_audio, is_image = False, False, False
     if path.endswith(tuple(ARCH_EXT)) or re_search(
@@ -182,14 +305,29 @@ async def get_audio_thumb(audio_file):
     return des_dir
 
 
-async def take_ss(video_file, duration=None, total=1, gen_ss=False):
+async def take_ss(video_file, duration=None, total=1, gen_ss=False, user_id=None, position_percent=None):
     des_dir = ospath.join("Thumbnails", f"{time()}")
     await makedirs(des_dir, exist_ok=True)
+    
+    # Get video metadata for overlay
+    video_metadata = await get_video_metadata(video_file)
+    
     if duration is None:
         duration = (await get_media_info(video_file))[0]
     if duration == 0:
         duration = 3
-    duration = duration - (duration * 2 / 100)
+    
+    # Get user's thumbnail position preference (default to 50% for midpoint)
+    if position_percent is None and user_id is not None:
+        user_dict = user_data.get(user_id, {})
+        position_percent = int(user_dict.get("thumb_position", "50"))
+    elif position_percent is None:
+        position_percent = 50  # Default to midpoint
+    
+    # Ensure position is within valid range
+    position_percent = max(1, min(99, position_percent))
+    
+    duration = duration - (duration * 2 / 100)  # 2% buffer from end
     cmd = [
         "ffmpeg",
         "-hide_banner",
@@ -210,13 +348,26 @@ async def take_ss(video_file, duration=None, total=1, gen_ss=False):
 
     async def extract_ss(eq_thumb):
         async with thumb_sem:
-            cmd[5] = str((duration // total) * eq_thumb)
+            if gen_ss:
+                # For multiple screenshots, distribute evenly
+                cmd[5] = str((duration // total) * eq_thumb)
+            else:
+                # For single thumbnail, use the specified position percentage
+                cmd[5] = str(duration * (position_percent / 100))
+            
             tstamps[f"wz_thumb_{eq_thumb}.jpg"] = strftime(
                 "%H:%M:%S", gmtime(float(cmd[5]))
             )
-            cmd[-1] = ospath.join(des_dir, f"wz_thumb_{eq_thumb}.jpg")
+            thumb_path = ospath.join(des_dir, f"wz_thumb_{eq_thumb}.jpg")
+            cmd[-1] = thumb_path
             task = await create_subprocess_exec(*cmd, stderr=PIPE)
-            return (task, await task.wait(), eq_thumb)
+            result = (task, await task.wait(), eq_thumb)
+            
+            # Add metadata overlay if thumbnail was created successfully and we have metadata
+            if result[1] == 0 and await aiopath.exists(thumb_path) and video_metadata:
+                await add_metadata_overlay(thumb_path, video_metadata)
+            
+            return result
 
     tasks = [extract_ss(eq_thumb) for eq_thumb in range(1, total + 1)]
     status = await gather(*tasks)

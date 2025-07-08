@@ -93,6 +93,10 @@ desp_dict = {
         "Custom Thumbnail to appear on the Leeched files uploaded by the bot",
         "Send a photo to save it as custom thumbnail. \n<b>Alternatively: </b><code>/cmd [photo] -s thumb</code> \n<b>Timeout:</b> 60 sec",
     ],
+    "thumb_position": [
+        "Video Thumbnail Position is the percentage of video duration from where thumbnail will be captured (default: 50% for midpoint)",
+        "Send thumbnail position as percentage (1-99). Examples: 25, 50, 75. Default is 50 for midpoint capture. \n<b>Timeout:</b> 60 sec",
+    ],
     "yt_opt": [
         "YT-DLP Options is the Custom Quality for the extraction of videos from the yt-dlp supported sites.",
         'Send YT-DLP Options. Timeout: 60 sec\nFormat: key:value|key:value|key:value.\nExample: format:bv*+mergeall[vcodec=none]|nocheckcertificate:True\nCheck all yt-dlp api options from this <a href="https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/YoutubeDL.py#L184">FILE</a> to convert cli arguments to api options.',
@@ -138,6 +142,7 @@ fname_dict = {
     "ldump": "User Dump",
     "lcaption": "Caption",
     "thumb": "Thumbnail",
+    "thumb_position": "Thumbnail Position",
     "yt_opt": "YT-DLP Options",
     "usess": "User Session",
     "split_size": "Leech Splits",
@@ -351,6 +356,12 @@ async def get_user_settings(from_user, key=None, edit_type=None, edit_mode=None)
             f"userset {user_id} thumb",
         )
 
+        thumb_position = user_dict.get("thumb_position", "50")
+        buttons.ibutton(
+            f"{'✅️' if user_dict.get('thumb_position') else ''} Thumbnail Position",
+            f"userset {user_id} thumb_position",
+        )
+
         split_size = (
             get_readable_file_size(config_dict["LEECH_SPLIT_SIZE"]) + " (Default)"
             if user_dict.get("split_size", "") == ""
@@ -450,6 +461,7 @@ async def get_user_settings(from_user, key=None, edit_type=None, edit_mode=None)
             DL=f"{dailyll} / {dailytlle}",
             LTYPE=ltype,
             THUMB=thumbmsg,
+            THUMB_POS=f"{thumb_position}%",
             SPLIT_SIZE=split_size,
             EQUAL_SPLIT=equal_splits,
             MEDIA_GROUP=media_group,
@@ -672,6 +684,7 @@ async def user_settings(client, message):
                     "ldump",
                     "yt_opt",
                     "lmeta",
+                    "thumb_position",
                 ]
                 and reply_to.text
             ):
@@ -685,6 +698,8 @@ async def user_settings(client, message):
 
 ➲ <b>Custom Thumbnail :</b>
     /cmd -s thumb
+➲ <b>Thumbnail Position :</b>
+    /cmd -s thumb_position
 ➲ <b>Leech Filename Prefix :</b>
     /cmd -s lprefix
 ➲ <b>Leech Filename Suffix :</b>
@@ -789,6 +804,14 @@ async def set_custom(client, message, pre_event, key, direct=False):
             except Exception:
                 value = ""
         return_key = "universal"
+    elif key == "thumb_position":
+        try:
+            value = int(value)
+            if value < 1 or value > 99:
+                value = 50  # Default to 50% if invalid
+        except ValueError:
+            value = 50  # Default to 50% if not a number
+        value = str(value)
     update_user_ldata(user_id, n_key, value)
     await deleteMessage(message)
     await update_user_settings(pre_event, key, return_key, msg=message, sdirect=direct)
@@ -1091,6 +1114,7 @@ async def edit_user_settings(client, query):
         "msuffix",
         "mremname",
         "lmeta",
+        "thumb_position",
     ]:
         handler_dict[user_id] = False
         await query.answer()

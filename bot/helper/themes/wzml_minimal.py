@@ -294,6 +294,7 @@ class WZMLStyle:
 ┎<b> Daily Leech : </b><code>{DL}</code> per day
 ┠<b> Leech Type :</b> <i>{LTYPE}</i>
 ┠<b> Custom Thumbnail :</b> <i>{THUMB}</i>
+┠<b> Thumbnail Position :</b> <i>{THUMB_POS}</i>
 ┠<b> Leech Split Size :</b> <code>{SPLIT_SIZE}</code>
 ┠<b> Equal Splits :</b> <i>{EQUAL_SPLIT}</i>
 ┠<b> Media Group :</b> <i>{MEDIA_GROUP}</i>
