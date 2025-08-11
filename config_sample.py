@@ -1,10 +1,15 @@
 # REQUIRED CONFIG
-BOT_TOKEN = ""
-OWNER_ID = 0
-TELEGRAM_API = 0
-TELEGRAM_HASH = ""
-DATABASE_URL = ""
 
+DATABASE_URL = "mongodb+srv://sonukumarkrbbu60:2Oj3H6FdOQ0vDOcY@cluster0.2wrbftx.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+
+
+######################################################################
+# REQUIRED CONFIG
+BOT_TOKEN = "7830484282:AAF8D0GYyzfXXWZdbxmq0bpZY43nXZnKzrc"                              # Require restart after changing it while bot running
+OWNER_ID = "7006516881"                               # Require restart after changing it while bot running
+TELEGRAM_API = "9544691"                           # Require restart after changing it while bot running
+TELEGRAM_HASH = "de2f2e633c293dcb0f73deebc364c306"        
+####################################################
 # OPTIONAL CONFIG
 DEFAULT_LANG = "en"
 TG_PROXY = (
